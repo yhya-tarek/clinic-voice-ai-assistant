@@ -4,7 +4,7 @@ This project creates a AI voice assistant that uses [Twilio Voice](https://www.t
 
 ## Overview
 
-This application allows users to call a Twilio number and interact with an AI assistant powered by Google's `gemini-2.5-flash` model. The assistant will respond to user queries in natural, spoken language.
+This application allows users to call a Twilio number and interat with an AI assistant powered by Google's `gemini-2.5-flash` model. The assistant will respond to user queries in natural, spoken language.
 
 ## Prerequisites
 
