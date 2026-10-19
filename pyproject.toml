@@ -1,0 +1,25 @@
+[project]
+name = "clinic-voice-agent"
+version = "0.1.0"
+description = "Real-time multilingual phone agent for clinic appointment booking"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "twilio>=9.8.7",
+    "uvicorn>=0.38.0",
+    "fastapi>=0.115.0",
+    "python-dotenv>=1.0.0",
+    "google-generativeai>=0.8.0",
+    "google-cloud-speech>=2.27.0",
+    "websockets>=15.0.1",
+    "azure-cognitiveservices-speech>=1.47.0",
+    "cartesia>=2.0.17",
+    "psycopg2>=2.9.11",
+    "websocket-client>=1.9.0",
+    "langgraph>=1.0.4",
+    "langsmith>=0.4.56",
+    "openai>=2.9.0",
+    "azure-identity>=1.25.1",
+    "azure-keyvault-secrets>=4.10.0",
+    "python-multipart>=0.0.21",
+]

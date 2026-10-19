@@ -1,0 +1,33 @@
+{
+  "clinic": {
+    "name": "Demo Health Clinic",
+    "branding_tagline": "Family and Specialist Care",
+    "services": [
+      "General Practice",
+      "Dermatology",
+      "Pediatrics"
+    ],
+    "service_areas": [
+      "City center",
+      "Surrounding areas"
+    ],
+    "availability": "Phone line open 24/7 for appointment booking, rescheduling and general questions.",
+    "responsible_person": {
+      "name": "Dr. Jane Doe",
+      "title": "Medical Director"
+    },
+    "contact_email": "info@example.com",
+    "allowed_topics": [
+      "General information about the clinic",
+      "Services offered and which specialty handles what",
+      "Opening hours, service areas and the team",
+      "Booking, rescheduling and cancelling appointments"
+    ],
+    "forbidden_topics": [
+      "Specific medical diagnoses",
+      "Individual therapy or medication recommendations",
+      "Acute emergency triage or emergency instructions",
+      "Binding cost or reimbursement commitments"
+    ]
+  }
+}

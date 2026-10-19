@@ -1,76 +1,94 @@
-# AI Voice Assistant with Twilio and Google Gemini (Python)
+# Clinic Voice Agent
 
-This project creates a AI voice assistant that uses [Twilio Voice](https://www.twilio.com/en-us/voice) and [ConversationRelay](https://www.twilio.com/en-us/products/conversational-ai/conversationrelay), and the [Google Gemini API](https://ai.google.dev/) to engage in two-way conversations over a phone call.
+A real-time phone agent that answers a clinic's line and books, reschedules and cancels appointments in natural conversation. Callers dial a normal phone number; the agent listens, talks back with a natural voice, and writes directly to the clinic's scheduling database.
 
-## Overview
+Originally built for a production deployment at a private clinic. This repository is a sanitized version: the client's name, branding, staff and infrastructure have been replaced with a fictional "Demo Health Clinic".
 
-This application allows users to call a Twilio number and interat with an AI assistant powered by Google's `gemini-2.5-flash` model. The assistant will respond to user queries in natural, spoken language.
+## What it does
 
-## Prerequisites
+- **Answers inbound calls** (and can place outbound ones) over Twilio.
+- **Speaks the caller's language.** Speech recognition auto-detects the language per utterance (English and German by default, configurable), and the agent replies in whatever the caller is using, switching mid-call if they do.
+- **Handles barge-in.** If the caller interrupts, playback stops immediately and the agent listens instead of talking over them.
+- **Books real appointments** through LLM tool calling: registers the patient, looks up free slots by specialty and doctor working hours, books, lists past bookings, and updates or cancels them.
+- **Stays in scope.** A clinic config file defines allowed and forbidden topics (no diagnoses, no medication advice, no emergency triage).
+- **Admin panel** at `/` to edit the agent's instructions live and inspect patients and appointments.
+- **Phone verification page** (`/verify`) using Twilio Verify (SMS or call OTP).
 
-- [Python 3.10+](https://www.python.org/downloads/)
-- A Twilio Account: Sign up for a [free trial here](https://twil.io/try-twilio).
-- A Twilio Number with Voice Capabilities: [Instructions to purchase a number](https://support.twilio.com/hc/en-us/articles/223180928-How-to-Buy-a-Twilio-Phone-Number).
-- A Google AI API Key: Visit [Google AI Studio here](https://aistudio.google.com/) to generate a key for free.
+## Architecture
 
-## Installation
+```
+Caller ──► Twilio ──► /incoming-call (TwiML) ──► WS /media-stream
+                                                     │
+          ┌──────────────────────────────────────────┼──────────────────────────┐
+          ▼                                          ▼                          ▼
+  Azure Speech (STT)                     Azure OpenAI Realtime          Cartesia (TTS)
+  μ-law 8 kHz push stream,               instructions + tool schemas,   streaming μ-law audio
+  continuous language ID,                function calling               back to Twilio,
+  silence-based segmentation                     │                      interruptible
+                                                 ▼
+                                      tools/ ──► PostgreSQL
+                                      (patients, doctors, working hours, bookings)
+```
 
-1. Clone this repository:
+The pipeline is fully streaming: audio frames from Twilio are pushed into the recognizer as they arrive, recognized text is sent to the model as soon as the caller pauses, and TTS audio is streamed back chunk by chunk. An interruption event cancels the in-flight model response and TTS stream and clears Twilio's playback buffer. See [ARCHITECTURE.md](ARCHITECTURE.md) for module-level detail.
 
-    ``` bash
-    git clone https://github.com/rishabkumar7/twilio-cr-gemini-python
-    cd twilio-cr-gemini-python
-    ```
+## Project layout
 
-2. Install the required dependencies. It's recommended to use a virtual environment.
+```
+main.py                    FastAPI app and endpoints
+config.py                  Environment and constants
+clinic_config.json         Clinic facts the agent may talk about (fictional)
+instructions.txt           Agent persona and booking flow (editable from the admin panel)
+database.py                PostgreSQL schema and queries (ClinicDB)
+routes/
+  websocket_handler.py     Real-time media stream: STT → LLM → TTS, interruptions
+  call_routes.py           TwiML for incoming calls, admin panel
+  verification_routes.py   OTP verification page and API
+services/
+  speech_service.py        Azure Speech configuration
+  openai_service.py        Realtime session setup
+  tts_service.py           Cartesia streaming TTS
+  twilio_verify_service.py Twilio Verify wrapper
+tools/
+  schemas.py               Function-calling schemas
+  implementations.py       Tool → database bindings
+```
 
-    ``` bash
-    pip install -r requirements.txt
-    ```
+## Agent tools
 
-3. Configure your environment variables by creating a .env file in the root of your project:
+| Tool | Purpose |
+|---|---|
+| `add_new_patient` | Register the caller (name, phone) |
+| `check_available_appointments` | Free slots by specialty, from doctor working hours minus existing bookings |
+| `book_appointment` | Book a chosen slot |
+| `check_previous_appointments` | List the caller's bookings by phone number |
+| `update_appointment` | Reschedule, change doctor, or cancel |
+| `get_date` | Current date, so relative dates ("next Tuesday") resolve correctly |
 
-    - You can copy the example: cp .env.example .env (if you have one) or create it manually.
-    - Add your keys to the .env file:
+## Running it
 
-        ``` bash
-        # .env file
-        GOOGLE_API_KEY="YOUR_GOOGLE_AI_API_KEY_HERE"
-        NGROK_URL="your-ngrok-forwarding-url.ngrok-free.app"
-        ```
+Requirements: Python 3.12+, PostgreSQL, and accounts for Twilio, Azure OpenAI (realtime-capable deployment), Azure Speech and Cartesia.
 
-## Usage
+```bash
+pip install -r requirements.txt     # or: uv sync
+cp .env.example .env                # fill in your keys
 
-1. Start [ngrok](https://ngrok.com/) to expose your local server to the internet on port 8080:
+# create the schema (drops existing tables!) and add a doctor with working hours
+python -c "
+from datetime import time
+from database import ClinicDB
+db = ClinicDB(); db.setup_database()
+doc = db.add_doctor('Dr. Jane Doe', specialty='General Practice')['data']['doctor_id']
+for day in range(1, 6): db.add_worktime(doc, day, time(9), time(17))  # Mon-Fri (0 = Sunday)
+"
 
-    ``` bash
-    ngrok http 8080
-    ```
+python main.py                      # serves on $PORT (default 8080)
+```
 
-2. Copy the `https://` forwarding URL from your ngrok terminal and update the NGROK_URL in your `.env` file with the domain part (e.g., your-ngrok-forwarding-url.ngrok-free.app).
-3. Run the application:
+Expose the service over HTTPS (e.g. ngrok or a cloud host) and set your Twilio number's voice webhook to `https://<your-host>/incoming-call`.
 
-    ``` bash
-    python main.py
-    ```
+To adapt it to another clinic, edit `clinic_config.json` and `instructions.txt`; set `SPEECH_LANGUAGES` for the languages your callers speak.
 
-4. Configure your Twilio phone number's voice webhook. In the Twilio console, navigate to your number's settings and under "A CALL COMES IN", set the webhook to your ngrok URL with the `/twiml` endpoint (e.g., https://your-ngrok-forwarding-url.ngrok-free.app/twiml).
-5. Call your Twilio number and start talking to your new Gemini-powered voice assistant!
+## Stack
 
-## How It Works
-
-1. When a user calls the Twilio number, Twilio makes an HTTP request to the /twiml endpoint.
-2. The application returns TwiML, which instructs Twilio to establish a WebSocket connection to the server at /ws.
-3. Voice input from the user is transcribed by Twilio and sent to the server as JSON messages over the WebSocket.
-4. The server sends the transcribed text to the **Google Gemini API** and gets a response.
-5. The AI-generated text response is sent back to Twilio through the WebSocket.
-6. Twilio's built-in Text-to-Speech (TTS) engine converts the text to audio and plays it for the user.
-7. The conversation continues until the call is disconnected.
-
-## Project Structure
-
-- `main.py`: The main application file containing the FastAPI server, WebSocket handler, and **Google Gemini integration**.
-
-- `requirements.txt`: A file listing the Python dependencies.
-
-- `.env`: A file for storing environment variables like your `GOOGLE_API_KEY` and `NGROK_URL`.
+Python · FastAPI · WebSockets · Twilio Media Streams & Verify · Azure OpenAI Realtime · Azure Speech · Cartesia · PostgreSQL
